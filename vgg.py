@@ -14,10 +14,11 @@ class BasicBlock(nn.Module):
     def __init__(self, in_channel, out_channel):
         super(BasicBlock, self).__init__()
         self.conv = nn.Conv2d(in_channel, out_channel, kernel_size=3, stride=1, padding=1)
+        self.bn = nn.BatchNorm2d(out_channel)       # 论文中没有 bn 层
         self.relu = nn.ReLU()
 
     def forward(self, x):
-        x = self.relu(self.conv(x))
+        x = self.relu(self.bn(self.conv(x)))
         return x
 
 
@@ -34,6 +35,7 @@ class VGG(nn.Module):
         self.fc2 = nn.Linear(4096, 4096)
         self.fc3 = nn.Linear(4096, num_classes)
         self.relu = nn.ReLU()
+        self.dropout = nn.Dropout(p=0.5)
         self._init_weight()
 
     def _make_layer(self, block, in_channel, out_channel, block_num):
@@ -65,8 +67,8 @@ class VGG(nn.Module):
         x = self.layer4(x)
         x = self.layer5(x)
         x = x.view(x.shape[0], -1)
-        x = self.relu(self.fc1(x))
-        x = self.relu(self.fc2(x))
+        x = self.dropout(self.relu(self.fc1(x)))
+        x = self.dropout(self.relu(self.fc2(x)))
         x = self.fc3(x)
         probs = torch.softmax(x, dim=1)
         return x, probs

@@ -87,6 +87,7 @@ def train(args):
     for epoch in range(args.epochs):
         model.train()
         acc = 0
+        train_loss = 0
         for idx, (data, targets) in enumerate(train_dataloader):
             data, targets = data.to(device), targets.to(device)
             optimizer.zero_grad()
@@ -96,16 +97,18 @@ def train(args):
             optimizer.step()
             if args.warmup:
                 scheduler.step()
+            lr = optimizer.param_groups[0]["lr"]
             # 计算准确率
             _, preds = torch.max(probs, 1)
             acc += (preds == targets).sum()
             train_acc = int(acc) / (targets.size(0) * (idx + 1))
             writer.add_scalar('train/loss', loss, global_step)
-            writer.add_scalar('train/acc', acc, global_step)
+            writer.add_scalar('train/acc', train_acc, global_step)
+            writer.add_scalar('train/lr', lr, global_step)
             global_step += 1
             if (idx + 1) % args.log_iter == 0:
                 logger.info(f'[{epoch}/{args.epochs}] [{idx}/{len(train_dataloader)}] global_step: {global_step}, '
-                            f'lr: {optimizer.param_groups[0]["lr"]:.6f}, acc: {train_acc:.4f}, loss: {loss:.6f}')
+                            f'lr: {lr:.6f}, acc: {train_acc:.4f}, loss: {loss:.6f}')
         test_acc, test_loss = val(model, test_dataloader, device, criterion)
         writer.add_scalar('test/acc', test_acc, global_step)
         writer.add_scalar('test/loss', test_loss, global_step)
