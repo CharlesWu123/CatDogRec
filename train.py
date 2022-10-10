@@ -16,6 +16,7 @@ from torch.utils.tensorboard import SummaryWriter
 from torchvision import transforms
 
 from utils.utils import setup_logger, WarmupPolyLR
+from utils.io_utils import write_yaml
 from dataset import CatDogsDataset
 from vgg import vgg16
 
@@ -30,6 +31,9 @@ def init_args():
     params.add_argument('--log_iter', type=int, default=20, help='log iter')
     params.add_argument('--warmup', type=bool, default=True, help='warmup')
     params.add_argument('--warmup_epoch', type=int, default=2, help='warmup_epoch')
+    params.add_argument('--is_dropout', type=bool, default=2, help='is dropout')
+    params.add_argument('--is_bn', type=bool, default=False, help='is bn')
+    params.add_argument('--save_latest', type=bool, default=True, help='save latest')
     args = params.parse_args()
     return args
 
@@ -37,10 +41,12 @@ def init_args():
 def train(args):
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     save_dir = os.path.join(args.save_dir, f'{time.strftime("%Y-%m-%d %H:%M:%S")}')
+    # 保存配置
     model_save_dir = os.path.join(save_dir, 'model')
     logs_save_dir = os.path.join(save_dir, 'logs')
     os.makedirs(model_save_dir, exist_ok=True)
     os.makedirs(logs_save_dir, exist_ok=True)
+    write_yaml(vars(args), os.path.join(save_dir, 'config.yaml'))
     logger_save_path = os.path.join(logs_save_dir, 'train.log')
     logger = setup_logger(logger_save_path)
     logger.info(args)
@@ -68,7 +74,7 @@ def train(args):
     logger.info('train: {} dataloader, test: {} dataloader'.format(len(train_dataloader), len(test_dataloader)))
     # 模型
     logger.info('Prepare Model...')
-    model = vgg16(num_classes=2)
+    model = vgg16(num_classes=2, is_dropout=args.is_dropout, is_bn=args.is_bn)
     model.to(device)
     # 优化器
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
@@ -97,18 +103,20 @@ def train(args):
             optimizer.step()
             if args.warmup:
                 scheduler.step()
+            train_loss += loss.item()
+            train_loss = float(train_loss) / (idx + 1)
             lr = optimizer.param_groups[0]["lr"]
             # 计算准确率
             _, preds = torch.max(probs, 1)
             acc += (preds == targets).sum()
             train_acc = int(acc) / (targets.size(0) * (idx + 1))
-            writer.add_scalar('train/loss', loss, global_step)
+            writer.add_scalar('train/loss', train_loss, global_step)
             writer.add_scalar('train/acc', train_acc, global_step)
             writer.add_scalar('train/lr', lr, global_step)
             global_step += 1
             if (idx + 1) % args.log_iter == 0:
                 logger.info(f'[{epoch}/{args.epochs}] [{idx}/{len(train_dataloader)}] global_step: {global_step}, '
-                            f'lr: {lr:.6f}, acc: {train_acc:.4f}, loss: {loss:.6f}')
+                            f'lr: {lr:.6f}, acc: {train_acc:.4f}, loss: {train_loss:.6f}')
         test_acc, test_loss = val(model, test_dataloader, device, criterion)
         writer.add_scalar('test/acc', test_acc, global_step)
         writer.add_scalar('test/loss', test_loss, global_step)
@@ -123,9 +131,15 @@ def train(args):
                 'state_dict': model.state_dict()
             }
             torch.save(ckpt, os.path.join(model_save_dir, 'best.pth'))
+        if args.save_latest:
+            ckpt = {
+                'best_acc': best_acc,
+                'best_epoch': best_epoch,
+                'state_dict': model.state_dict()
+            }
+            torch.save(ckpt, os.path.join(model_save_dir, 'latest.pth'))
         logger.info(f'[{epoch}/{args.epochs}] current best: acc: {best_acc:.4f}, epoch: {best_epoch}')
     writer.close()
-    torch.save(model.state_dict(), 'latest.pth')
     print('Train Finish.')
 
 
@@ -144,6 +158,6 @@ def val(model, dataloader, device, criterion):
 
 
 if __name__ == '__main__':
-    os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+    os.environ['CUDA_VISIBLE_DEVICES'] = '0'
     args = init_args()
     train(args)
