@@ -41,7 +41,7 @@ def init_args():
 
 def train(args):
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-    save_dir = os.path.join(args.save_dir, f'{args.model_name}-{time.strftime("%Y-%m-%d %H:%M:%S")}')
+    save_dir = os.path.join(args.save_dir, f'{args.model_name}-{time.strftime("%Y-%m-%d-%H-%M-%S")}')
     # 保存配置
     model_save_dir = os.path.join(save_dir, 'model')
     logs_save_dir = os.path.join(save_dir, 'logs')

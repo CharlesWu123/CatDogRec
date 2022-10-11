@@ -70,7 +70,7 @@ if __name__ == '__main__':
     img_path = './data/cat1.jpg'
     model_path = './output/vgg16_bn-2022-10-11 09:59:45/model/best.pth'
     pred_name, prob, t = predict(img_path, model_path)
-    print(pred_name, prob, t)
+    print('预测结果：{}, 预测概率：{:.2f}, 预测时间: {:.2f}'.format(pred_name, prob, t))
     # 画出结果
     draw_img = plot_one_box_PIL(Image.open(img_path), color=(0, 0, 255), label=f'{pred_name} {prob}')
     draw_img.save('./data/res.jpg')
