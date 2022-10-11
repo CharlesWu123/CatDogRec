@@ -15,14 +15,17 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from torchvision import transforms
 
+
 from utils.utils import setup_logger, WarmupPolyLR
 from utils.io_utils import write_yaml
 from dataset import CatDogsDataset
-from vgg import vgg16
+import vgg
+# from vgg import vgg16
 
 
 def init_args():
     params = argparse.ArgumentParser()
+    params.add_argument('--model_name', type=str, default='vgg16_bn', help='model_name')
     params.add_argument('--data_root', type=str, default='./data/cat_vs_dog', help='data root')
     params.add_argument('--epochs', type=int, default=50, help='epochs')
     params.add_argument('--batch_size', type=int, default=32, help='batch size')
@@ -31,8 +34,6 @@ def init_args():
     params.add_argument('--log_iter', type=int, default=20, help='log iter')
     params.add_argument('--warmup', type=bool, default=True, help='warmup')
     params.add_argument('--warmup_epoch', type=int, default=2, help='warmup_epoch')
-    params.add_argument('--is_dropout', type=bool, default=2, help='is dropout')
-    params.add_argument('--is_bn', type=bool, default=False, help='is bn')
     params.add_argument('--save_latest', type=bool, default=True, help='save latest')
     args = params.parse_args()
     return args
@@ -40,7 +41,7 @@ def init_args():
 
 def train(args):
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-    save_dir = os.path.join(args.save_dir, f'{time.strftime("%Y-%m-%d %H:%M:%S")}')
+    save_dir = os.path.join(args.save_dir, f'{args.model_name}-{time.strftime("%Y-%m-%d %H:%M:%S")}')
     # 保存配置
     model_save_dir = os.path.join(save_dir, 'model')
     logs_save_dir = os.path.join(save_dir, 'logs')
@@ -74,7 +75,10 @@ def train(args):
     logger.info('train: {} dataloader, test: {} dataloader'.format(len(train_dataloader), len(test_dataloader)))
     # 模型
     logger.info('Prepare Model...')
-    model = vgg16(num_classes=2, is_dropout=args.is_dropout, is_bn=args.is_bn)
+    # 自己写的
+    # model = vgg16(num_classes=2, is_dropout=args.is_dropout, is_bn=args.is_bn)
+    # torchvision
+    model = getattr(vgg, args.model_name)(num_classes=2, pretrained=True)
     model.to(device)
     # 优化器
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
@@ -97,7 +101,7 @@ def train(args):
         for idx, (data, targets) in enumerate(train_dataloader):
             data, targets = data.to(device), targets.to(device)
             optimizer.zero_grad()
-            logits, probs = model(data)
+            logits = model(data)
             loss = criterion(logits, targets)
             loss.backward()
             optimizer.step()
@@ -107,6 +111,7 @@ def train(args):
             train_loss = float(train_loss) / (idx + 1)
             lr = optimizer.param_groups[0]["lr"]
             # 计算准确率
+            probs = torch.softmax(logits, dim=1)
             _, preds = torch.max(probs, 1)
             acc += (preds == targets).sum()
             train_acc = int(acc) / (targets.size(0) * (idx + 1))
@@ -130,17 +135,17 @@ def train(args):
                 'best_epoch': best_epoch,
                 'state_dict': model.state_dict()
             }
-            torch.save(ckpt, os.path.join(model_save_dir, 'best.pth'))
+            torch.save(ckpt, os.path.join(model_save_dir, f'{args.model_name}-best.pth'))
         if args.save_latest:
             ckpt = {
                 'best_acc': best_acc,
                 'best_epoch': best_epoch,
                 'state_dict': model.state_dict()
             }
-            torch.save(ckpt, os.path.join(model_save_dir, 'latest.pth'))
+            torch.save(ckpt, os.path.join(model_save_dir, f'{args.model_name}-latest.pth'))
         logger.info(f'[{epoch}/{args.epochs}] current best: acc: {best_acc:.4f}, epoch: {best_epoch}')
     writer.close()
-    print('Train Finish.')
+    logger.info('Train Finish.')
 
 
 @torch.no_grad()
@@ -149,8 +154,9 @@ def val(model, dataloader, device, criterion):
     loss, acc, num = 0, 0, 0
     for idx, (data, targets) in enumerate(dataloader):
         data, targets = data.to(device), targets.to(device)
-        logits, probs = model(data)
+        logits = model(data)
         loss += criterion(logits, targets).item()
+        probs = torch.softmax(logits, dim=1)
         _, preds = torch.max(probs, 1)
         num += targets.size(0)
         acc += (preds == targets).sum()
@@ -158,6 +164,6 @@ def val(model, dataloader, device, criterion):
 
 
 if __name__ == '__main__':
-    os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+    os.environ['CUDA_VISIBLE_DEVICES'] = '2'
     args = init_args()
     train(args)

@@ -7,12 +7,14 @@
 @Desc : 
 '''
 import os
+import time
 
 import torch
 from PIL import Image, ImageDraw, ImageFont
 from torchvision import transforms
+from torchvision.models import vgg
 
-from vgg import vgg16
+# from vgg import vgg16
 
 
 label_names = ['Cat', 'Dog']
@@ -27,7 +29,8 @@ def predict(img_path, model_path):
         transforms.Normalize([0.4875, 0.4544, 0.4164], [0.2521, 0.2453, 0.2481])
     ])
     # 模型
-    model = vgg16(num_classes=2)
+    model_name = model_path.split('/')[-3].split('-')[0]
+    model = getattr(vgg, model_name)(num_classes=2)
     model.load_state_dict(torch.load(model_path, map_location='cpu')['state_dict'])
     model.to(device)
 
@@ -36,11 +39,14 @@ def predict(img_path, model_path):
     image = torch.unsqueeze(image, 0)
     image = image.to(device)
 
-    logits, probs = model(image)
+    start_time = time.time()
+    logits = model(image)
+    end_time = time.time()
+    probs = torch.softmax(logits, dim=1)
     _, preds = torch.max(probs, 1)
     cls = int(preds[0])
     pred_name = label_names[cls]
-    return pred_name, round(float(probs[0][cls]), 2)
+    return pred_name, round(float(probs[0][cls]), 2), round(end_time-start_time, 2)
 
 
 def plot_one_box_PIL(img, color=None, label=None, line_thickness=None):
@@ -61,10 +67,10 @@ def plot_one_box_PIL(img, color=None, label=None, line_thickness=None):
 
 if __name__ == '__main__':
     os.environ['CUDA_VISIBLE_DEVICES'] = '0'
-    img_path = './data/cat.jpg'
-    model_path = './output/2022-10-10 14:24:58/model/best.pth'
-    pred_name, prob = predict(img_path, model_path)
-    print(pred_name, prob)
+    img_path = './data/cat1.jpg'
+    model_path = './output/vgg16_bn-2022-10-11 09:59:45/model/best.pth'
+    pred_name, prob, t = predict(img_path, model_path)
+    print(pred_name, prob, t)
     # 画出结果
     draw_img = plot_one_box_PIL(Image.open(img_path), color=(0, 0, 255), label=f'{pred_name} {prob}')
     draw_img.save('./data/res.jpg')
